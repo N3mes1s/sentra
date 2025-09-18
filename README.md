@@ -1,6 +1,6 @@
 # Sentra
 
-Minimal, fast request evaluation service implementing the Microsoft Copilot Studio External Security Webhooks interface with a small, ordered plugin pipeline. First blocking plugin wins; otherwise the request is allowed.
+Minimal, fast request evaluation service implementing the Microsoft Copilot Studio External Security Webhooks interface with a small, ordered plugin pipeline. First blocking plugin wins; otherwise the request is allowed. Vibecoded with love.
 
 Goals:
 * Deterministic, low‑latency evaluation (single in‑process loop)
@@ -197,6 +197,10 @@ Use in container probes: `httpGet: path: /healthz`.
 ## Metrics Endpoint
 
 `GET /metrics` exposes Prometheus counters, latency histogram, and build info gauge. See `METRICS.md` for detailed semantics and usage guidance.
+
+## License
+
+This project is released under the [MIT License](LICENSE).
 
 Counters:
 ```
