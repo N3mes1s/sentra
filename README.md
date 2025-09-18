@@ -198,10 +198,6 @@ Use in container probes: `httpGet: path: /healthz`.
 
 `GET /metrics` exposes Prometheus counters, latency histogram, and build info gauge. See `METRICS.md` for detailed semantics and usage guidance.
 
-## License
-
-This project is released under the [MIT License](LICENSE).
-
 Counters:
 ```
 sentra_requests_total
@@ -433,7 +429,7 @@ Intentionally not implemented:
 
 ## License
 
-[Add your license information here]
+This project is licensed under the [MIT License](LICENSE).
 
 ## Support
 
