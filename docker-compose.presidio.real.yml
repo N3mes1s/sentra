@@ -1,0 +1,34 @@
+services:
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer@sha256:fe81e4a3d9cae40255246c163ffaf1c12983ab6105ecac9e2c72492a5dc39bcf
+    container_name: presidio-analyzer
+    environment:
+      - PYTHONIOENCODING=UTF-8
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:3000/health').status == 200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  sentra:
+    build: .
+    container_name: sentra-real
+    depends_on:
+      presidio-analyzer:
+        condition: service_healthy
+    env_file:
+      - presidio.real.env
+    volumes:
+      - ./examples/presidio/presidio_real_plugin_config.json:/config/presidio_real_plugin_config.json:ro
+      - ./telemetry_data:/data
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Optional sample client removed for cleaner local run; re-add if needed.

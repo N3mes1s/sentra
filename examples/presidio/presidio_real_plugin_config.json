@@ -1,0 +1,18 @@
+{
+    "externalHttp": [
+        {
+            "name": "external_presidio",
+            "url": "http://presidio-analyzer:3000/analyze",
+            "timeoutMs": 800,
+            "requestTemplate": "{\n  \"text\": \"${userMessage}\",\n  \"language\": \"en\"\n}",
+            "blockField": "/",
+            "nonEmptyPointerBlocks": true,
+            "reasonCode": 860,
+            "reason": "Presidio detected PII",
+            "failOpen": true
+        }
+    ],
+    "policies": [],
+    "piiKeywords": [],
+    "domainBlocklist": []
+}

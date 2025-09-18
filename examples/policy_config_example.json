@@ -1,0 +1,24 @@
+{
+    "policies": [
+        {
+            "tool": "sendemail",
+            "arg": "subject",
+            "contains": [
+                "confidential",
+                "internal use only"
+            ],
+            "reasonCode": 750,
+            "reason": "Policy: restricted subject keyword"
+        },
+        {
+            "tool": "dataexport",
+            "arg": "table",
+            "contains": [
+                "customers",
+                "users"
+            ],
+            "reasonCode": 751,
+            "reason": "Policy: exporting restricted dataset"
+        }
+    ]
+}

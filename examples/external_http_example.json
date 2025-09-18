@@ -1,0 +1,30 @@
+{
+    "externalHttp": [
+        {
+            "name": "external_presidio",
+            "url": "https://scanner.example.internal/api/eval",
+            "timeoutMs": 400,
+            "requestTemplate": "{\n  \"userMessage\": \"${userMessage}\",\n  \"toolName\": \"${toolName}\",\n  \"input\": ${inputJson}\n}",
+            "blockField": "block",
+            "reasonCode": 801,
+            "reason": "External PII policy",
+            "failOpen": true
+        },
+        {
+            "name": "external_sensitive_keywords",
+            "url": "https://keywords.example.internal/decision",
+            "timeoutMs": 300,
+            "blockField": "/decision/block",
+            "reasonCode": 802,
+            "failOpen": true
+        }
+    ],
+    "policies": [],
+    "piiKeywords": [
+        "passport",
+        "ssn"
+    ],
+    "domainBlocklist": [
+        "bad-domain.test"
+    ]
+}

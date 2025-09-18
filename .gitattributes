@@ -1,0 +1,62 @@
+# Enforce consistent LF line endings for text files
+* text=auto eol=lf
+
+# Treat common binary formats explicitly (avoid diff/merge filters)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.xz binary
+*.7z binary
+
+# Rust source: ensure linguist picks up correctly and enable better diffs
+*.rs diff=rust
+Cargo.toml linguist-vendored=false
+
+# Generated / vendor (mark as vendored if later added under vendor/)
+vendor/** linguist-vendored
+
+# Documentation formats
+*.md text
+*.mdx text
+*.txt text
+
+# JSON / YAML / config
+*.json text
+*.json5 text
+*.yaml text
+*.yml text
+
+# Shell / scripts
+*.sh text eol=lf
+*.py text
+*.rb text
+*.ps1 text eol=lf
+
+# Ignore linguist counting for test data fixtures if added later
+fixtures/** linguist-documentation
+
+# Git attribute for lock files (treat as text and merge friendly)
+Cargo.lock text
+
+# Optimize diff for common data structures
+*.toml text
+*.cfg text
+*.ini text
+
+# Binary artifacts possibly produced by profiling
+*.profraw binary
+*.profdata binary
+
+# Prevent CRLF issues on Windows contributors cloning project
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
+# License and security docs
+LICENSE text
+SECURITY.md text

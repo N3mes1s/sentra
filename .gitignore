@@ -1,0 +1,77 @@
+# ---- Core Rust build artifacts ----
+/target/
+**/*.rlib
+
+# Incremental compilation
+/target/**/incremental/
+
+# Cargo specific metadata
+/.cargo/
+# Keep Cargo.lock (application project) – remove ignore so it is tracked
+
+# Binaries (if produced outside target via scripts)
+*.exe
+*.dll
+*.dylib
+*.so
+
+# ---- OS / Tooling noise ----
+.DS_Store
+Thumbs.db
+
+# ---- Editor / IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+
+# ---- Python tooling (mypy cache present) ----
+.mypy_cache/
+.pytype/
+__pycache__/
+*.pyc
+
+# ---- Logs / telemetry ----
+*.log
+logs/
+telemetry_data/
+audit.log
+telemetry.log
+
+# ---- Tooling metadata (not needed in VCS) ----
+.claude/
+
+# ---- Temporary & backup files ----
+*~
+*.tmp
+*.bak
+*.orig
+# Specific removed temp files pattern
+temp_*
+
+# ---- Coverage / test artifacts ----
+coverage/
+htmlcov/
+
+# ---- Generated docs (optional; uncomment if using cargo doc output) ----
+# /target/doc/
+
+# ---- Node / frontend (if added later) ----
+node_modules/
+yarn.lock
+pnpm-lock.yaml
+
+# ---- Scanner output & telemetry ----
+trace/
+telemetry/
+results/
+artifacts/
+profiling/
+*.profraw
+
+# ---- Misc ----
+.env
+.env.*
+!.env.example
+.claude/
