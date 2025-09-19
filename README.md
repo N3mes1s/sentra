@@ -11,7 +11,7 @@ Sentra is a lightweight Rust service that acts as the external security provider
 ## Quick Start
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/N3mes1s/sentra
 cd sentra
 cargo run --release
 ```
