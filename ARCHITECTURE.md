@@ -85,118 +85,63 @@ sequenceDiagram
    end
 ```
 
-### Steps
-1. Parse & validate: `api-version`, auth (optional strict allowlist), and enforce request size. A `DefaultBodyLimit` layer rejects chunked bodies above `SENTRA_MAX_REQUEST_BYTES`, while a Content-Length check fast-fails when the header overflows the limit.
-2. Build evaluation context (deadline from `SENTRA_PLUGIN_BUDGET_MS`) with shared precomputed strings for downstream plugins.
-3. Iterate ordered plugin list (async trait methods awaited in sequence). External HTTP plugin may perform a network POST with a bounded timeout.
-4. On first block: capture plugin name (`blockedBy`) + diagnostics; stop loop.
-5. Compute timings, write telemetry/audit lines if configured.
-6. Return response (benign or block). In audit-only mode the external response is always benign but an audit line records the would‑block decision.
+### What Happens During a Request
+1. **Guards**: ensure `api-version` is present, the bearer token is on the allowlist (if configured), and the request body stays under `SENTRA_MAX_REQUEST_BYTES` (handled by both a Content-Length check and Axum’s `DefaultBodyLimit`).
+2. **Context build**: assemble precomputed lowercase text, chat history, and evaluation budget (`SENTRA_PLUGIN_BUDGET_MS`).
+3. **Plugin loop**: execute plugins in the order supplied via `SENTRA_PLUGINS`. Each plugin is awaited; the first one returning `blockAction=true` short-circuits the loop unless audit-only mode is active. Network calls happen only in `external_http` and are constrained by per-definition timeouts.
+4. **Response + telemetry**: reply with allow/block, capture structured diagnostics, emit JSONL telemetry and optional audit logs, and update Prometheus counters/histograms.
 
-### Concurrency & Backpressure
-Tokio worker tasks handle requests start‑to‑finish. No internal queues. Deadline / soft budget (`SENTRA_PLUGIN_BUDGET_MS`) provides pressure relief. The pipeline stays sequential (no speculative parallel evaluation) to keep attribution deterministic and reduce contention.
+## Plugin Lineup
 
-### Error Handling
-Plugin internal errors → treated as non‑blocking (prefer availability). Client 4xx reserved for version/auth/validation issues.
+| Plugin | Purpose |
+|--------|---------|
+| `secrets` | Regex detection of AWS-style access keys. |
+| `pii` | Emails, phones, IBANs, plus configurable keywords (Aho-Corasick cache). |
+| `email_bcc` | Ensures BCC recipients use the company domain. |
+| `domain_block` | Blocks configurable domains with boundary-aware matching. |
+| `exfil` | Flags prompt-injection phrases (e.g., “ignore previous instructions”). |
+| `policy_pack` | User-defined substring/regex rules from `SENTRA_PLUGIN_CONFIG`. |
+| `external_*` | Posts templated JSON to remote services; supports `${userMessage}` and JSON-safe `${userMessageJson}` placeholders, fail-open/fail-closed behaviour, and pointer-based block detection. |
 
-### Extensibility
-Add plugin → implement trait + include in `SENTRA_PLUGINS`. Telemetry emission is centralized by `TelemetrySink`, so replacing or extending sinks avoids handler changes. The `external_http` plugin remains the generic bridge to remote services (e.g., Presidio) with a templated request body that now supports both raw `${…}` placeholders and JSON-safe variants like `${userMessageJson}` / `${toolNameJson}` for proper escaping.
+Add a plugin by implementing the trait, compiling it into `src/plugins/`, and adding its name to `SENTRA_PLUGINS`.
 
-### Observability
-JSONL line per evaluation (`schemaVersion`, timings, decision, attribution, `auditSuppressed`). Prometheus metrics: request / block counters, audit suppression counter, histograms (request + per‑plugin), build info, process start & uptime gauges, log file size gauge, telemetry write error counter. Optional stdout mirroring with sampling. Log rotation retains configurable backups and can gzip the newest rollover.
+## Observability & Ops
+- **JSONL telemetry**: one line per request (`schemaVersion`, `blockAction`, `reasonCode`, `blockedBy`, `pluginTimings`, `auditSuppressed`, `correlationId`). Configure with `LOG_FILE`, rotation knobs, and optional stdout mirroring (`SENTRA_LOG_STDOUT`, `SENTRA_LOG_SAMPLE_N`).
+- **Audit log**: enabled automatically when `SENTRA_AUDIT_ONLY=1`, capturing the would-block response while the user-facing response stays benign.
+- **Prometheus metrics**: `/metrics` exports request/block counters, audit suppression counter, overall & per-plugin latency histograms, telemetry write stats, log size gauge, build info, and uptime.
+- **Health**: `/healthz` returns JSON summarising version, plugin count, and budget. Ready for Kubernetes `httpGet` probes.
 
----
+## Endpoints
+- `POST /validate?api-version=2025-05-01`
+- `POST /analyze-tool-execution?api-version=2025-05-01`
+- `GET /healthz`
+- `GET /metrics`
 
-The above diagrams complement existing textual architecture details, offering a visual and temporal understanding of how Sentra processes scan requests end-to-end.
+## Code Layout
+- `src/lib.rs` – router, handlers, shared state, telemetry + metrics wiring.
+- `src/config.rs` – environment parsing.
+- `src/util.rs` – precomputed request context, matcher caches, deadlines.
+- `src/plugins/` – individual plugin implementations and pipeline assembly.
+- `tests/` – unit + integration coverage, including HTTP round-trips and telemetry assertions.
 
-## Components
-* HTTP layer (`src/lib.rs`): routing, guards, handlers, metrics, telemetry writers.
-* Plugin pipeline (`src/plugins/mod.rs`): sequential evaluation.
-* Plugins (`src/plugins/*.rs`): pattern / rule checks + external HTTP bridge.
-* Optional config file (policy pack rules, domains, keywords).
+## Configuration Hints
+Environment variables control everything (see README cheatsheet). The important ones for production are:
 
-## Stack
-Rust + Tokio + Axum, serde for (de)serialization, aho‑corasick / simple pattern checks, atomic counters for metrics assembly.
+| Variable | Why it matters |
+|----------|----------------|
+| `SENTRA_PLUGINS` | Defines evaluation order; first block wins. |
+| `STRICT_AUTH_ALLOWED_TOKENS` | Locks down who can call the provider. |
+| `SENTRA_MAX_REQUEST_BYTES` | Prevents resource abuse via oversized payloads. |
+| `LOG_FILE`, `AUDIT_LOG_FILE` | Capture the decisions you’ll investigate later. |
+| `SENTRA_AUDIT_ONLY` | Dry-run mode for safe rollout. |
 
-## Plugin Interface
-Current implementation uses simple trait methods executed inline (no dynamic spawning per plugin). Each plugin returns allow/block + optional diagnostics payload.
+## Spec Alignment
+Sentra mirrors Microsoft’s external security webhook contract:
+- CamelCase payload wire format (serde renaming keeps internals idiomatic).
+- Required fields: `plannerContext.userMessage` and `toolDefinition.name` must be non-empty; errors use domain codes 4000/4001/4002/2001 as documented.
+- Responses include `blockAction`, `reasonCode`, `reason`, `blockedBy`, and optional `diagnostics` exactly as the spec outlines.
+- Correlation IDs from `x-ms-correlation-id` propagate into telemetry for traceability.
 
-### Data Flow (Summary)
-Benign: iterate all → no block → telemetry (blockAction=false) → respond.
-Blocking: stop at first block → telemetry with `blockedBy`/diagnostics → respond.
-External: if `external_http` configured, it participates at its ordering position; a network error becomes either allow (fail‑open) or block (fail‑closed) depending on configuration.
-
-### Concurrency Model
-One handler loop per request; no per‑plugin tasks spawned.
-
-### Memory
-Primarily string scanning; telemetry serialized once per request.
-
-### Configuration (Env)
-See README for full list (plugins ordering, budgets, logging/rotation, audit, auth, size guard, optional config file). External plugin configuration is JSON‑driven (see example in `examples/*external*.json`).
-
-### Security Notes
-Memory safety from Rust, optional strict token allowlist, payload size cap, audit‑only safe rollout, structured telemetry for forensics.
-
-## Telemetry Fields (JSONL)
-`ts`, `correlationId`, `blockAction`, `reasonCode`, `blockedBy`, `latencyMs`, `diagnostics`, `pluginTimings`, `auditSuppressed`, and stable `schemaVersion`. Additional internal fields may appear (e.g., log rotation metadata) but existing keys retain semantics. See `DIAGNOSTICS.md` for structured diagnostics details and reason code legend.
-
-### Audit Records
-When audit mode suppresses a block an extra line with `auditOnly=true` + `wouldResponse` + original request is written to the audit log.
-
-## Removed Prototype Features
-Job queue, streaming (WebSocket/SSE), multi-plugin aggregation response mode, HTML UI were removed for simplicity.
-
-## Possible Future Enhancements
-Per-plugin timeout wrappers, alternative telemetry exporters, HMAC response signing, optional faster pattern engines.
-
-## Implemented Endpoints
-* `POST /validate?api-version=2025-05-01`
-* `POST /analyze-tool-execution?api-version=2025-05-01`
-* `GET /metrics` (Prometheus exposition)
-* `GET /healthz` (liveness & basic readiness JSON)
-
-### Request Handling Path
-
-```
-Axum Router
-  -> validate_handler / analyze_handler (version + auth)
-       -> build EvalContext (deadline)
-          -> PluginPipeline::evaluate(request, ctx)
-               (ordered plugin list, stops at first block)
-             -> Individual plugin eval (pure, fast)
-  <- JSON response serialized with camelCase field names
-```
-
-### Evaluation Model
-First blocking plugin short‑circuits. Structural non‑empty detection is supported in the `external_http` plugin when a JSON Pointer (including root `/`) resolves to a non‑empty array/object and `nonEmptyPointerBlocks=true`.
-
-### Telemetry JSONL
-If `LOG_FILE` set: one line per request with decision + timings. Audit‑only mode writes both the would‑block decision (audit line) and the externally visible allow decision.
-
-| Field | Description |
-|-------|-------------|
-| `ts` | RFC3339 UTC timestamp |
-| `correlationId` | From `x-ms-correlation-id` header (or empty) |
-| `blockAction` | Final block decision |
-| `reasonCode` | Blocking plugin code |
-| `blockedBy` | Plugin identifier responsible for the decision |
-| `latencyMs` | Milliseconds from handler start to decision |
-| `diagnostics` | Same string returned to client |
-| `pluginTimings` | Array of `{plugin, ms}` objects (observability) |
-| `auditSuppressed` | Included when audit-only masked a block |
-
-### Strict Auth
-Optional token allowlist (comma separated). Reject → 401 `errorCode=2001`.
-
-### Request Size Enforcement
-`SENTRA_MAX_REQUEST_BYTES` drives both the Content-Length preflight check and Axum's `DefaultBodyLimit` guard. Oversized payloads, including chunked bodies with no length header, receive a structured 413 (`errorCode=4001`) and a warning is emitted for telemetry.
-
-### Version Compatibility
-Unknown versions accepted (logged). Missing → 400.
-
-### Performance
-CPU‑bound string / pattern scans; no external I/O in evaluation path. Size guard + deadline + warn threshold. Telemetry append best effort.
-
+Run `cargo test` or hit the included Postman/HTTP examples under `examples/` to see real payloads end-to-end.
 ### Evolution Hooks
 Pluggable telemetry backend, per‑plugin timeout guard, optional response signing.
